@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Noise Pollution Mapper</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; }
+  
+  header { background: #1e293b; padding: 12px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #334155; flex-wrap: wrap; }
+  header h1 { font-size: 1.1rem; color: #38bdf8; font-weight: 700; }
+  .status-pill { padding: 4px 12px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+  .idle { background: #334155; color: #94a3b8; }
+  .recording { background: #dc2626; color: white; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+
+  .controls { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+  button { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 600; transition: all .2s; }
+  #btnRecord { background: #22c55e; color: white; }
+  #btnRecord:hover { background: #16a34a; }
+  #btnRecord.active { background: #dc2626; }
+  #btnRecord.active:hover { background: #b91c1c; }
+  #btnClear { background: #475569; color: #e2e8f0; }
+  #btnClear:hover { background: #334155; }
+  #btnExport { background: #0ea5e9; color: white; }
+  #btnExport:hover { background: #0284c7; }
+  #btnImport { background: #8b5cf6; color: white; }
+  #btnImport:hover { background: #7c3aed; }
+  #btnLocate { background: #f59e0b; color: white; }
+  #btnLocate:hover { background: #d97706; }
+  #fileInput { display: none; }
+
+  .main { display: flex; flex: 1; overflow: hidden; }
+  #map { flex: 1; }
+  
+  .sidebar { width: 280px; background: #1e293b; border-left: 1px solid #334155; display: flex; flex-direction: column; overflow: hidden; }
+  .sidebar-title { padding: 12px 16px; font-size: 0.85rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid #334155; }
+
+  .db-meter { padding: 16px; border-bottom: 1px solid #334155; }
+  .db-value { font-size: 3rem; font-weight: 800; text-align: center; line-height: 1; }
+  .db-label { text-align: center; font-size: 0.75rem; color: #64748b; margin-bottom: 10px; }
+  .db-bar-bg { background: #0f172a; border-radius: 4px; height: 10px; overflow: hidden; }
+  .db-bar { height: 100%; border-radius: 4px; transition: width .15s, background .15s; }
+  .level-label { margin-top: 6px; text-align: center; font-size: 0.75rem; font-weight: 600; }
+
+  .legend { padding: 14px 16px; border-bottom: 1px solid #334155; }
+  .legend-title { font-size: 0.75rem; color: #94a3b8; font-weight: 600; margin-bottom: 8px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 0.75rem; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+
+  .log { flex: 1; overflow-y: auto; padding: 8px; }
+  .log-entry { background: #0f172a; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; font-size: 0.72rem; border-left: 3px solid; }
+  .log-entry .db-num { font-weight: 700; font-size: 0.95rem; }
+  .log-entry .time { color: #64748b; }
+  .log-entry .loc { color: #94a3b8; }
+
+  .stats { padding: 12px 16px; border-top: 1px solid #334155; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .stat { text-align: center; }
+  .stat-val { font-size: 1rem; font-weight: 700; }
+  .stat-lbl { font-size: 0.65rem; color: #64748b; }
+
+  .no-mic { padding: 20px; text-align: center; color: #64748b; font-size: 0.8rem; line-height: 1.6; }
+  .hint { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; margin: 8px; font-size: 0.75rem; color: #94a3b8; line-height: 1.6; }
+
+  @media (max-width: 600px) { .sidebar { width: 220px; } .db-value { font-size: 2rem; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎙️ Noise Pollution Mapper</h1>
+  <span id="statusPill" class="status-pill idle">● IDLE</span>
+  <div class="controls">
+    <button id="btnRecord">▶ Start Recording</button>
+    <button id="btnLocate">📍 My Location</button>
+    <button id="btnImport">⬆ Import CSV</button>
+    <input type="file" id="fileInput" accept=".csv">
+    <button id="btnExport">⬇ Export CSV</button>
+    <button id="btnClear">✕ Clear</button>
+  </div>
+</header>
+
+<div class="main">
+  <div id="map"></div>
+  <div class="sidebar">
+    <div class="sidebar-title">Live Monitor</div>
+    <div class="db-meter">
+      <div class="db-value" id="dbVal" style="color:#22c55e">-- </div>
+      <div class="db-label">decibels (dB)</div>
+      <div class="db-bar-bg"><div class="db-bar" id="dbBar" style="width:0%;background:#22c55e"></div></div>
+      <div class="level-label" id="levelLabel">Waiting for microphone...</div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-title">Noise Level Scale</div>
+      <div class="legend-item"><div class="dot" style="background:#22c55e"></div> &lt; 50 dB — Quiet</div>
+      <div class="legend-item"><div class="dot" style="background:#84cc16"></div> 50–60 dB — Moderate</div>
+      <div class="legend-item"><div class="dot" style="background:#eab308"></div> 60–70 dB — Loud</div>
+      <div class="legend-item"><div class="dot" style="background:#f97316"></div> 70–85 dB — Very Loud</div>
+      <div class="legend-item"><div class="dot" style="background:#ef4444"></div> &gt; 85 dB — Dangerous</div>
+    </div>
+
+    <div class="sidebar-title" style="padding-top:10px">Readings Log</div>
+    <div class="log" id="log"><div class="no-mic">Press <strong>Start Recording</strong> to begin capturing noise data with your device's microphone.</div></div>
+
+    <div class="stats">
+      <div class="stat"><div class="stat-val" id="sAvg">--</div><div class="stat-lbl">Avg dB</div></div>
+      <div class="stat"><div class="stat-val" id="sMax">--</div><div class="stat-lbl">Max dB</div></div>
+      <div class="stat"><div class="stat-val" id="sCount">0</div><div class="stat-lbl">Points</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── MAP SETUP ───────────────────────────────────────────────────
+const map = L.map('map').setView([30.9, 75.85], 13); // Default: Ludhiana
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors', maxZoom: 19
+}).addTo(map);
+
+// Try get user location
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(pos => {
+    map.setView([pos.coords.latitude, pos.coords.longitude], 15);
+  });
+}
+
+let heatLayer = null;
+let markersLayer = L.layerGroup().addTo(map);
+
+// ─── DATA STORE ──────────────────────────────────────────────────
+let readings = [];  // { lat, lng, db, time }
+
+function getColor(db) {
+  if (db < 50) return '#22c55e';
+  if (db < 60) return '#84cc16';
+  if (db < 70) return '#eab308';
+  if (db < 85) return '#f97316';
+  return '#ef4444';
+}
+
+function getLabel(db) {
+  if (db < 50) return '🟢 Quiet';
+  if (db < 60) return '🟡 Moderate';
+  if (db < 70) return '🟠 Loud';
+  if (db < 85) return '🔴 Very Loud';
+  return '🚨 Dangerous';
+}
+
+function addReading(lat, lng, db, time) {
+  readings.push({ lat, lng, db, time });
+  updateMap();
+  updateLog(lat, lng, db, time);
+  updateStats();
+}
+
+function updateMap() {
+  markersLayer.clearLayers();
+  const heatData = [];
+
+  readings.forEach(r => {
+    const col = getColor(r.db);
+    const marker = L.circleMarker([r.lat, r.lng], {
+      radius: 10, fillColor: col, color: '#fff',
+      weight: 1.5, opacity: 1, fillOpacity: 0.85
+    }).bindPopup(`<b>${r.db} dB</b><br>${getLabel(r.db)}<br><small>${r.time}</small><br><small>${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}</small>`);
+    markersLayer.addLayer(marker);
+    heatData.push([r.lat, r.lng, r.db / 100]);
+  });
+
+  if (heatLayer) map.removeLayer(heatLayer);
+  if (heatData.length > 0) {
+    heatLayer = L.heatLayer(heatData, {
+      radius: 35, blur: 25, maxZoom: 17,
+      gradient: { 0.0: '#22c55e', 0.5: '#eab308', 0.7: '#f97316', 1.0: '#ef4444' }
+    }).addTo(map);
+  }
+}
+
+function updateLog(lat, lng, db, time) {
+  const log = document.getElementById('log');
+  const noMic = log.querySelector('.no-mic');
+  if (noMic) noMic.remove();
+
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.style.borderColor = getColor(db);
+  entry.innerHTML = `<span class="db-num" style="color:${getColor(db)}">${db} dB</span> ${getLabel(db)}<br>
+    <span class="loc">📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}</span><br>
+    <span class="time">🕐 ${time}</span>`;
+  log.insertBefore(entry, log.firstChild);
+}
+
+function updateStats() {
+  const dbs = readings.map(r => r.db);
+  document.getElementById('sCount').textContent = dbs.length;
+  document.getElementById('sAvg').textContent = (dbs.reduce((a, b) => a + b, 0) / dbs.length).toFixed(1);
+  document.getElementById('sMax').textContent = Math.max(...dbs);
+}
+
+// ─── MICROPHONE + AUDIO PROCESSING ───────────────────────────────
+let audioCtx = null, analyser = null, stream = null;
+let isRecording = false, recordInterval = null;
+let currentLat = null, currentLng = null;
+
+function getMicDb() {
+  const bufLen = analyser.fftSize;
+  const buf = new Float32Array(bufLen);
+  analyser.getFloatTimeDomainData(buf);
+  let sum = 0;
+  for (let i = 0; i < bufLen; i++) sum += buf[i] * buf[i];
+  const rms = Math.sqrt(sum / bufLen);
+  if (rms === 0) return 0;
+  let db = 20 * Math.log10(rms) + 90; // offset to get ~30-100 dB range
+  return Math.max(0, Math.min(120, Math.round(db)));
+}
+
+function updateMeter(db) {
+  const pct = Math.min(100, db);
+  const col = getColor(db);
+  document.getElementById('dbVal').textContent = db + ' ';
+  document.getElementById('dbVal').style.color = col;
+  document.getElementById('dbBar').style.width = pct + '%';
+  document.getElementById('dbBar').style.background = col;
+  document.getElementById('levelLabel').textContent = getLabel(db);
+  document.getElementById('levelLabel').style.color = col;
+}
+
+async function startRecording() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    const src = audioCtx.createMediaStreamSource(stream);
+    src.connect(analyser);
+
+    isRecording = true;
+    document.getElementById('btnRecord').textContent = '⏹ Stop Recording';
+    document.getElementById('btnRecord').classList.add('active');
+    document.getElementById('statusPill').textContent = '● RECORDING';
+    document.getElementById('statusPill').className = 'status-pill recording';
+
+    // Update meter every 200ms
+    const meterLoop = setInterval(() => {
+      if (!isRecording) { clearInterval(meterLoop); return; }
+      updateMeter(getMicDb());
+    }, 200);
+
+    // Capture GPS + save reading every 3 seconds
+    recordInterval = setInterval(() => {
+      if (!isRecording) return;
+      const db = getMicDb();
+      navigator.geolocation.getCurrentPosition(pos => {
+        currentLat = pos.coords.latitude;
+        currentLng = pos.coords.longitude;
+        const time = new Date().toLocaleTimeString();
+        addReading(currentLat, currentLng, db, time);
+        map.setView([currentLat, currentLng], map.getZoom());
+      }, () => {
+        // If GPS fails, use last known or default
+        if (currentLat) {
+          const time = new Date().toLocaleTimeString();
+          addReading(currentLat, currentLng, db, time);
+        }
+      });
+    }, 3000);
+
+  } catch (err) {
+    alert('Microphone access denied or unavailable.\n\nPlease allow microphone permission in your browser settings and try again.');
+  }
+}
+
+function stopRecording() {
+  isRecording = false;
+  clearInterval(recordInterval);
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (audioCtx) audioCtx.close();
+  document.getElementById('btnRecord').textContent = '▶ Start Recording';
+  document.getElementById('btnRecord').classList.remove('active');
+  document.getElementById('statusPill').textContent = '● IDLE';
+  document.getElementById('statusPill').className = 'status-pill idle';
+  document.getElementById('dbVal').textContent = '-- ';
+  document.getElementById('dbVal').style.color = '#22c55e';
+  document.getElementById('dbBar').style.width = '0%';
+  document.getElementById('levelLabel').textContent = 'Recording stopped';
+}
+
+document.getElementById('btnRecord').onclick = () => {
+  if (isRecording) stopRecording();
+  else startRecording();
+};
+
+// ─── LOCATE ME ───────────────────────────────────────────────────
+let locationMarker = null;
+
+document.getElementById('btnLocate').onclick = () => {
+  const btn = document.getElementById('btnLocate');
+  btn.textContent = '⏳ Locating...';
+  btn.disabled = true;
+
+  navigator.geolocation.getCurrentPosition(pos => {
+    const { latitude: lat, longitude: lng } = pos.coords;
+    map.setView([lat, lng], 17);
+
+    if (locationMarker) map.removeLayer(locationMarker);
+    locationMarker = L.circleMarker([lat, lng], {
+      radius: 12, fillColor: '#38bdf8', color: '#fff',
+      weight: 3, opacity: 1, fillOpacity: 0.9
+    }).bindPopup(`<b>📍 You are here</b><br><small>${lat.toFixed(5)}, ${lng.toFixed(5)}</small>`)
+      .addTo(map).openPopup();
+
+    btn.textContent = '📍 My Location';
+    btn.disabled = false;
+  }, () => {
+    alert('Could not get your location.\nPlease allow location permission in your browser.');
+    btn.textContent = '📍 My Location';
+    btn.disabled = false;
+  }, { enableHighAccuracy: true, timeout: 8000 });
+};
+
+// ─── EXPORT CSV ───────────────────────────────────────────────────
+document.getElementById('btnExport').onclick = () => {
+  if (!readings.length) { alert('No data to export yet!'); return; }
+  const header = 'latitude,longitude,decibels,timestamp\n';
+  const rows = readings.map(r => `${r.lat},${r.lng},${r.db},"${r.time}"`).join('\n');
+  const blob = new Blob([header + rows], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `noise_map_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+};
+
+// ─── IMPORT CSV ───────────────────────────────────────────────────
+document.getElementById('btnImport').onclick = () => document.getElementById('fileInput').click();
+
+document.getElementById('fileInput').onchange = (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const lines = ev.target.result.trim().split('\n');
+    let count = 0;
+    lines.forEach((line, i) => {
+      if (i === 0) return; // skip header
+      const parts = line.split(',');
+      if (parts.length < 3) return;
+      const lat = parseFloat(parts[0]), lng = parseFloat(parts[1]), db = parseFloat(parts[2]);
+      const time = parts[3] ? parts[3].replace(/"/g,'') : 'Imported';
+      if (!isNaN(lat) && !isNaN(lng) && !isNaN(db)) { addReading(lat, lng, db, time); count++; }
+    });
+    if (count > 0) { map.fitBounds(markersLayer.getBounds()); alert(`✅ Imported ${count} readings.`); }
+    else alert('No valid data found in CSV.');
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+};
+
+// ─── CLEAR ────────────────────────────────────────────────────────
+document.getElementById('btnClear').onclick = () => {
+  if (!readings.length || confirm('Clear all readings?')) {
+    readings = [];
+    markersLayer.clearLayers();
+    if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
+    document.getElementById('log').innerHTML = '<div class="no-mic">All readings cleared. Press <strong>Start Recording</strong> to begin again.</div>';
+    document.getElementById('sAvg').textContent = '--';
+    document.getElementById('sMax').textContent = '--';
+    document.getElementById('sCount').textContent = '0';
+  }
+};
+</script>
+</body>
+</html>
