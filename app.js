@@ -150,7 +150,7 @@ async function startRecording() {
           addReading(currentLat, currentLng, db, time);
         }
       });
-    }, 3000);
+    }, 1000);
 
   } catch (err) {
     alert('Microphone access denied or unavailable.\n\nPlease allow microphone permission in your browser settings and try again.');
