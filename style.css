@@ -1,0 +1,59 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; }
+
+header { background: #1e293b; padding: 12px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #334155; flex-wrap: wrap; }
+header h1 { font-size: 1.1rem; color: #38bdf8; font-weight: 700; }
+.status-pill { padding: 4px 12px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+.idle { background: #334155; color: #94a3b8; }
+.recording { background: #dc2626; color: white; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+
+.controls { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+button { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 600; transition: all .2s; }
+#btnRecord { background: #22c55e; color: white; }
+#btnRecord:hover { background: #16a34a; }
+#btnRecord.active { background: #dc2626; }
+#btnRecord.active:hover { background: #b91c1c; }
+#btnClear { background: #475569; color: #e2e8f0; }
+#btnClear:hover { background: #334155; }
+#btnExport { background: #0ea5e9; color: white; }
+#btnExport:hover { background: #0284c7; }
+#btnImport { background: #8b5cf6; color: white; }
+#btnImport:hover { background: #7c3aed; }
+#btnLocate { background: #f59e0b; color: white; }
+#btnLocate:hover { background: #d97706; }
+#fileInput { display: none; }
+
+.main { display: flex; flex: 1; overflow: hidden; }
+#map { flex: 1; }
+
+.sidebar { width: 280px; background: #1e293b; border-left: 1px solid #334155; display: flex; flex-direction: column; overflow: hidden; }
+.sidebar-title { padding: 12px 16px; font-size: 0.85rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid #334155; }
+
+.db-meter { padding: 16px; border-bottom: 1px solid #334155; }
+.db-value { font-size: 3rem; font-weight: 800; text-align: center; line-height: 1; }
+.db-label { text-align: center; font-size: 0.75rem; color: #64748b; margin-bottom: 10px; }
+.db-bar-bg { background: #0f172a; border-radius: 4px; height: 10px; overflow: hidden; }
+.db-bar { height: 100%; border-radius: 4px; transition: width .15s, background .15s; }
+.level-label { margin-top: 6px; text-align: center; font-size: 0.75rem; font-weight: 600; }
+
+.legend { padding: 14px 16px; border-bottom: 1px solid #334155; }
+.legend-title { font-size: 0.75rem; color: #94a3b8; font-weight: 600; margin-bottom: 8px; }
+.legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 0.75rem; }
+.dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+
+.log { flex: 1; overflow-y: auto; padding: 8px; }
+.log-entry { background: #0f172a; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; font-size: 0.72rem; border-left: 3px solid; }
+.log-entry .db-num { font-weight: 700; font-size: 0.95rem; }
+.log-entry .time { color: #64748b; }
+.log-entry .loc { color: #94a3b8; }
+
+.stats { padding: 12px 16px; border-top: 1px solid #334155; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.stat { text-align: center; }
+.stat-val { font-size: 1rem; font-weight: 700; }
+.stat-lbl { font-size: 0.65rem; color: #64748b; }
+
+.no-mic { padding: 20px; text-align: center; color: #64748b; font-size: 0.8rem; line-height: 1.6; }
+.hint { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; margin: 8px; font-size: 0.75rem; color: #94a3b8; line-height: 1.6; }
+
+@media (max-width: 600px) { .sidebar { width: 220px; } .db-value { font-size: 2rem; } }
