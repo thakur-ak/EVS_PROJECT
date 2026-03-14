@@ -24,11 +24,11 @@ navigator.geolocation.getCurrentPosition(pos => {
 
 // ─── COLOR & LABEL HELPERS ───────────────────────────────────────
 function getColor(db) {
-  if (db < 50) return '#22c55e';
-  if (db < 60) return '#84cc16';
-  if (db < 70) return '#eab308';
-  if (db < 85) return '#f97316';
-  return '#ef4444';
+  if (db < 50) return '#16a34a';
+  if (db < 60) return '#0d9488';
+  if (db < 70) return '#b45309';
+  if (db < 85) return '#c2410c';
+  return '#991b1b';
 }
 
 function getLabel(db) {
@@ -199,7 +199,7 @@ function stopRecording() {
   document.getElementById('statusPill').textContent = '● IDLE';
   document.getElementById('statusPill').className = 'status-pill idle';
   document.getElementById('dbVal').textContent = '-- ';
-  document.getElementById('dbVal').style.color = '#22c55e';
+  document.getElementById('dbVal').style.color = '#ffffff';
   document.getElementById('dbBar').style.width = '0%';
   document.getElementById('levelLabel').textContent = 'Recording stopped';
 }

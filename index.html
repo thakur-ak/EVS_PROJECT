@@ -1,102 +1,75 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Comfortaa:wght@300..700&family=Merriweather+Sans:ital,wght@0,300..800;1,300..800&family=Overpass:wght@100..900&display=swap"
-    rel="stylesheet">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Noise Pollution Mapper</title>
 
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@100..900&display=swap" rel="stylesheet">
+
   <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 
   <!-- Your CSS -->
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css"/>
 </head>
-
 <body>
 
-  <header>
-    <h1>🎙️ Noise Pollution Mapper</h1>
-    <span id="statusPill" class="status-pill idle">● IDLE</span>
-    <div class="controls">
-      <button id="btnRecord">▶ Start Recording</button>
-      <button id="btnLocate">📍 My Location</button>
-      <button id="btnImport">⬆ Import CSV</button>
-      <input type="file" id="fileInput" accept=".csv">
-      <button id="btnExport">⬇ Export CSV</button>
-      <button id="btnClear">✕ Clear</button>
+<header>
+  <h1>🎙️ Noise Pollution Mapper</h1>
+  <span id="statusPill" class="status-pill idle">● IDLE</span>
+  <div class="controls">
+    <button id="btnRecord">▶ Start Recording</button>
+    <button id="btnLocate">📍 My Location</button>
+    <button id="btnImport">⬆ Import CSV</button>
+    <input type="file" id="fileInput" accept=".csv">
+    <button id="btnExport">⬇ Export CSV</button>
+    <button id="btnClear">✕ Clear</button>
+  </div>
+</header>
+
+<div class="main">
+  <div id="map"></div>
+  <div class="sidebar">
+    <div class="sidebar-title">Live Monitor</div>
+    <div class="db-meter">
+      <div class="db-value" id="dbVal" style="color:#ffffff">-- </div>
+      <div class="db-label">decibels (dB)</div>
+      <div class="db-bar-bg"><div class="db-bar" id="dbBar" style="width:0%;background:#16a34a"></div></div>
+      <div class="level-label" id="levelLabel" style="color:#444">Waiting for microphone...</div>
     </div>
-  </header>
 
-  <div class="main">
-    <div id="map"></div>
-    <div class="sidebar">
-      <div class="sidebar-title">Live Monitor</div>
-      <div class="db-meter">
-        <div class="db-value" id="dbVal" style="color:#22c55e">-- </div>
-        <div class="db-label">decibels (dB)</div>
-        <div class="db-bar-bg">
-          <div class="db-bar" id="dbBar" style="width:0%;background:#22c55e"></div>
-        </div>
-        <div class="level-label" id="levelLabel">Waiting for microphone...</div>
-      </div>
+    <div class="legend">
+      <div class="legend-title">Noise Level Scale</div>
+      <div class="legend-item"><div class="dot" style="background:#16a34a"></div> &lt; 50 dB — Quiet</div>
+      <div class="legend-item"><div class="dot" style="background:#0d9488"></div> 50–60 dB — Moderate</div>
+      <div class="legend-item"><div class="dot" style="background:#b45309"></div> 60–70 dB — Loud</div>
+      <div class="legend-item"><div class="dot" style="background:#c2410c"></div> 70–85 dB — Very Loud</div>
+      <div class="legend-item"><div class="dot" style="background:#991b1b"></div> &gt; 85 dB — Dangerous</div>
+    </div>
 
-      <div class="legend">
-        <div class="legend-title">Noise Level Scale</div>
-        <div class="legend-item">
-          <div class="dot" style="background:#22c55e"></div> &lt; 50 dB — Quiet
-        </div>
-        <div class="legend-item">
-          <div class="dot" style="background:#84cc16"></div> 50–60 dB — Moderate
-        </div>
-        <div class="legend-item">
-          <div class="dot" style="background:#eab308"></div> 60–70 dB — Loud
-        </div>
-        <div class="legend-item">
-          <div class="dot" style="background:#f97316"></div> 70–85 dB — Very Loud
-        </div>
-        <div class="legend-item">
-          <div class="dot" style="background:#ef4444"></div> &gt; 85 dB — Dangerous
-        </div>
-      </div>
+    <div class="sidebar-title" style="padding-top:10px">Readings Log</div>
+    <div class="log" id="log">
+      <div class="no-mic">Press <strong>Start Recording</strong> to begin capturing noise data with your device's microphone.</div>
+    </div>
 
-      <div class="sidebar-title" style="padding-top:10px">Readings Log</div>
-      <div class="log" id="log">
-        <div class="no-mic">Press <strong>Start Recording</strong> to begin capturing noise data with your device's
-          microphone.</div>
-      </div>
-
-      <div class="stats">
-        <div class="stat">
-          <div class="stat-val" id="sAvg">--</div>
-          <div class="stat-lbl">Avg dB</div>
-        </div>
-        <div class="stat">
-          <div class="stat-val" id="sMax">--</div>
-          <div class="stat-lbl">Max dB</div>
-        </div>
-        <div class="stat">
-          <div class="stat-val" id="sCount">0</div>
-          <div class="stat-lbl">Points</div>
-        </div>
-      </div>
+    <div class="stats">
+      <div class="stat"><div class="stat-val" id="sAvg">--</div><div class="stat-lbl">Avg dB</div></div>
+      <div class="stat"><div class="stat-val" id="sMax">--</div><div class="stat-lbl">Max dB</div></div>
+      <div class="stat"><div class="stat-val" id="sCount">0</div><div class="stat-lbl">Points</div></div>
     </div>
   </div>
+</div>
 
-  <!-- Leaflet JS -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
+<!-- Leaflet JS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
 
-  <!-- Your JS -->
-  <script src="app.js"></script>
+<!-- Your JS -->
+<script src="app.js"></script>
 
 </body>
-
 </html>
-
-
