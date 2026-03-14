@@ -1,23 +1,28 @@
 // ─── MAP SETUP ───────────────────────────────────────────────────
-const map = L.map('map').setView([30.9, 75.85], 13); // Default: Ludhiana
+const map = L.map('map').setView([30.9, 75.85], 13);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap contributors', maxZoom: 19
 }).addTo(map);
 
-// Try get user location on load
-if (navigator.geolocation) {
-  navigator.geolocation.getCurrentPosition(pos => {
-    map.setView([pos.coords.latitude, pos.coords.longitude], 15);
-  });
-}
-
 let heatLayer = null;
 let markersLayer = L.layerGroup().addTo(map);
+let locationMarker = null;
 
 // ─── DATA STORE ──────────────────────────────────────────────────
-let readings = []; // { lat, lng, db, time }
+let readings = [];
+let audioCtx = null, analyser = null, stream = null;
+let isRecording = false, recordInterval = null, gpsWatcher = null;
+let currentLat = null, currentLng = null;
 
+// ─── Try get location on page load (silently) ─────────────────────
+navigator.geolocation.getCurrentPosition(pos => {
+  currentLat = pos.coords.latitude;
+  currentLng = pos.coords.longitude;
+  map.setView([currentLat, currentLng], 15);
+}, () => {}, { enableHighAccuracy: true });
+
+// ─── COLOR & LABEL HELPERS ───────────────────────────────────────
 function getColor(db) {
   if (db < 50) return '#22c55e';
   if (db < 60) return '#84cc16';
@@ -34,6 +39,7 @@ function getLabel(db) {
   return '🚨 Dangerous';
 }
 
+// ─── READING LOGIC ───────────────────────────────────────────────
 function addReading(lat, lng, db, time) {
   readings.push({ lat, lng, db, time });
   updateMap();
@@ -44,17 +50,15 @@ function addReading(lat, lng, db, time) {
 function updateMap() {
   markersLayer.clearLayers();
   const heatData = [];
-
   readings.forEach(r => {
     const col = getColor(r.db);
-    const marker = L.circleMarker([r.lat, r.lng], {
+    L.circleMarker([r.lat, r.lng], {
       radius: 10, fillColor: col, color: '#fff',
       weight: 1.5, opacity: 1, fillOpacity: 0.85
-    }).bindPopup(`<b>${r.db} dB</b><br>${getLabel(r.db)}<br><small>${r.time}</small><br><small>${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}</small>`);
-    markersLayer.addLayer(marker);
+    }).bindPopup(`<b>${r.db} dB</b><br>${getLabel(r.db)}<br><small>${r.time}</small><br><small>${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}</small>`)
+      .addTo(markersLayer);
     heatData.push([r.lat, r.lng, r.db / 100]);
   });
-
   if (heatLayer) map.removeLayer(heatLayer);
   if (heatData.length > 0) {
     heatLayer = L.heatLayer(heatData, {
@@ -68,7 +72,6 @@ function updateLog(lat, lng, db, time) {
   const log = document.getElementById('log');
   const noMic = log.querySelector('.no-mic');
   if (noMic) noMic.remove();
-
   const entry = document.createElement('div');
   entry.className = 'log-entry';
   entry.style.borderColor = getColor(db);
@@ -85,85 +88,114 @@ function updateStats() {
   document.getElementById('sMax').textContent = Math.max(...dbs);
 }
 
-// ─── MICROPHONE + AUDIO PROCESSING ───────────────────────────────
-let audioCtx = null, analyser = null, stream = null;
-let isRecording = false, recordInterval = null;
-let currentLat = null, currentLng = null;
-
+// ─── MICROPHONE ──────────────────────────────────────────────────
 function getMicDb() {
-  const bufLen = analyser.fftSize;
-  const buf = new Float32Array(bufLen);
+  const buf = new Float32Array(analyser.fftSize);
   analyser.getFloatTimeDomainData(buf);
   let sum = 0;
-  for (let i = 0; i < bufLen; i++) sum += buf[i] * buf[i];
-  const rms = Math.sqrt(sum / bufLen);
+  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+  const rms = Math.sqrt(sum / buf.length);
   if (rms === 0) return 0;
-  let db = 20 * Math.log10(rms) + 90;
-  return Math.max(0, Math.min(120, Math.round(db)));
+  return Math.max(0, Math.min(120, Math.round(20 * Math.log10(rms) + 90)));
 }
 
 function updateMeter(db) {
-  const pct = Math.min(100, db);
   const col = getColor(db);
   document.getElementById('dbVal').textContent = db + ' ';
   document.getElementById('dbVal').style.color = col;
-  document.getElementById('dbBar').style.width = pct + '%';
+  document.getElementById('dbBar').style.width = Math.min(100, db) + '%';
   document.getElementById('dbBar').style.background = col;
   document.getElementById('levelLabel').textContent = getLabel(db);
   document.getElementById('levelLabel').style.color = col;
 }
 
+// ─── START RECORDING ─────────────────────────────────────────────
 async function startRecording() {
   try {
+    // Step 1 — get microphone
     stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 2048;
-    const src = audioCtx.createMediaStreamSource(stream);
-    src.connect(analyser);
+    audioCtx.createMediaStreamSource(stream).connect(analyser);
 
-    isRecording = true;
-    document.getElementById('btnRecord').textContent = '⏹ Stop Recording';
-    document.getElementById('btnRecord').classList.add('active');
-    document.getElementById('statusPill').textContent = '● RECORDING';
-    document.getElementById('statusPill').className = 'status-pill recording';
+    // Step 2 — show waiting state
+    document.getElementById('btnRecord').textContent = '⏳ Getting Location...';
+    document.getElementById('btnRecord').disabled = true;
+    document.getElementById('statusPill').textContent = '● WAITING FOR GPS';
+    document.getElementById('statusPill').className = 'status-pill idle';
 
-    // Update meter every 200ms
-    const meterLoop = setInterval(() => {
-      if (!isRecording) { clearInterval(meterLoop); return; }
-      updateMeter(getMicDb());
-    }, 200);
+    // Step 3 — begin recording once location is confirmed
+    const startWithLocation = (lat, lng) => {
+      currentLat = lat;
+      currentLng = lng;
 
-    // Capture GPS + save reading every 3 seconds
-    recordInterval = setInterval(() => {
-      if (!isRecording) return;
-      const db = getMicDb();
-      navigator.geolocation.getCurrentPosition(pos => {
+      isRecording = true;
+      document.getElementById('btnRecord').textContent = '⏹ Stop Recording';
+      document.getElementById('btnRecord').classList.add('active');
+      document.getElementById('btnRecord').disabled = false;
+      document.getElementById('statusPill').textContent = '● RECORDING';
+      document.getElementById('statusPill').className = 'status-pill recording';
+
+      // Live meter update
+      const meterLoop = setInterval(() => {
+        if (!isRecording) { clearInterval(meterLoop); return; }
+        updateMeter(getMicDb());
+      }, 200);
+
+      // Watch GPS continuously in background
+      gpsWatcher = navigator.geolocation.watchPosition(pos => {
         currentLat = pos.coords.latitude;
         currentLng = pos.coords.longitude;
+      }, null, { enableHighAccuracy: true });
+
+      // Save reading every 1 second instantly
+      recordInterval = setInterval(() => {
+        if (!isRecording) return;
+        const db = getMicDb();
         const time = new Date().toLocaleTimeString();
         addReading(currentLat, currentLng, db, time);
         map.setView([currentLat, currentLng], map.getZoom());
+      }, 1000);
+    };
+
+    // If GPS already known — start immediately, no waiting
+    if (currentLat !== null) {
+      startWithLocation(currentLat, currentLng);
+    } else {
+      // Otherwise fetch GPS first then start
+      navigator.geolocation.getCurrentPosition(pos => {
+        startWithLocation(pos.coords.latitude, pos.coords.longitude);
       }, () => {
-        if (currentLat) {
-          const time = new Date().toLocaleTimeString();
-          addReading(currentLat, currentLng, db, time);
-        }
-      });
-    }, 1000);
+        alert('Could not get GPS location. Please allow location permission and try again.');
+        document.getElementById('btnRecord').textContent = '▶ Start Recording';
+        document.getElementById('btnRecord').disabled = false;
+        document.getElementById('statusPill').textContent = '● IDLE';
+        document.getElementById('statusPill').className = 'status-pill idle';
+        stopMic();
+      }, { enableHighAccuracy: true, timeout: 10000 });
+    }
 
   } catch (err) {
-    alert('Microphone access denied or unavailable.\n\nPlease allow microphone permission in your browser settings and try again.');
+    alert('Microphone access denied or unavailable.\n\nPlease allow microphone permission in your browser settings.');
   }
 }
 
+function stopMic() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (audioCtx) audioCtx.close();
+  stream = null; audioCtx = null; analyser = null;
+}
+
+// ─── STOP RECORDING ──────────────────────────────────────────────
 function stopRecording() {
   isRecording = false;
   clearInterval(recordInterval);
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  if (audioCtx) audioCtx.close();
+  if (gpsWatcher !== null) { navigator.geolocation.clearWatch(gpsWatcher); gpsWatcher = null; }
+  stopMic();
   document.getElementById('btnRecord').textContent = '▶ Start Recording';
   document.getElementById('btnRecord').classList.remove('active');
+  document.getElementById('btnRecord').disabled = false;
   document.getElementById('statusPill').textContent = '● IDLE';
   document.getElementById('statusPill').className = 'status-pill idle';
   document.getElementById('dbVal').textContent = '-- ';
@@ -178,22 +210,22 @@ document.getElementById('btnRecord').onclick = () => {
 };
 
 // ─── LOCATE ME ───────────────────────────────────────────────────
-let locationMarker = null;
-
 document.getElementById('btnLocate').onclick = () => {
   const btn = document.getElementById('btnLocate');
   btn.textContent = '⏳ Locating...';
   btn.disabled = true;
 
   navigator.geolocation.getCurrentPosition(pos => {
-    const { latitude: lat, longitude: lng } = pos.coords;
-    map.setView([lat, lng], 17);
+    currentLat = pos.coords.latitude;
+    currentLng = pos.coords.longitude;
+
+    map.flyTo([currentLat, currentLng], 17, { animate: true, duration: 1.5 });
 
     if (locationMarker) map.removeLayer(locationMarker);
-    locationMarker = L.circleMarker([lat, lng], {
+    locationMarker = L.circleMarker([currentLat, currentLng], {
       radius: 12, fillColor: '#38bdf8', color: '#fff',
       weight: 3, opacity: 1, fillOpacity: 0.9
-    }).bindPopup(`<b>📍 You are here</b><br><small>${lat.toFixed(5)}, ${lng.toFixed(5)}</small>`)
+    }).bindPopup(`<b>📍 You are here</b><br><small>${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}</small>`)
       .addTo(map).openPopup();
 
     btn.textContent = '📍 My Location';
@@ -211,8 +243,10 @@ document.getElementById('btnExport').onclick = () => {
   const header = 'latitude,longitude,decibels,timestamp\n';
   const rows = readings.map(r => `${r.lat},${r.lng},${r.db},"${r.time}"`).join('\n');
   const blob = new Blob([header + rows], { type: 'text/csv' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = `noise_map_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `noise_map_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
 };
 
 // ─── IMPORT CSV ───────────────────────────────────────────────────
